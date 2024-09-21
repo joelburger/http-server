@@ -1,19 +1,19 @@
 const net = require('net');
 const { join } = require('node:path');
-const { readFileSync } = require('node:fs');
-const fs = require('fs');
+const { readFileSync, existsSync, writeFileSync } = require('node:fs');
 const { DOUBLE_CRLF, CRLF, HttpCodes, ContentTypes } = require('./constants');
+const { gzipSync } = require('node:zlib');
 
 const config = parseCliParameters();
 
 function readFileContents(filename) {
   const filePath = join(config.get('directory'), filename);
 
-  if (!fs.existsSync(filePath)) {
+  if (!existsSync(filePath)) {
     return null;
   }
 
-  const data = readFileSync(filePath);
+  const data = readFileSync(filePath, 'utf8');
 
   return Buffer.from(data).toString('utf8');
 }
@@ -47,37 +47,41 @@ function parseRequest(data) {
   };
 }
 
-function constructResponse(httpCode, contentType, contentEncoding, content) {
+function writeResponse(socket, httpCode, contentType, contentEncodings, content) {
   const statusLine = `HTTP/1.1 ${httpCode.code} ${httpCode.text}${CRLF}`;
+
+  const isGzip = contentEncodings && contentEncodings.split(',').includes('gzip');
+
+  const body = isGzip ? gzipSync(content) : content;
+
   const headers = [
     contentType && `Content-Type: ${contentType}`,
-    contentEncoding && `Content-Encoding: ${contentEncoding}`,
-    content && `Content-Length: ${content.length}`,
+    contentEncodings && `Content-Encoding: ${contentEncodings}`,
+    body && `Content-Length: ${body.length}`,
   ]
     .filter(Boolean)
     .join(CRLF);
 
-  return `${statusLine}${headers}${DOUBLE_CRLF}${content || ''}`;
+  if (isGzip) {
+    socket.write(`${statusLine}${headers}${DOUBLE_CRLF}`);
+    socket.write(body);
+  } else {
+    socket.write(`${statusLine}${headers}${DOUBLE_CRLF}${body || ''}`);
+  }
 }
 
 function saveFile(filename, contents) {
   const filePath = join(config.get('directory'), filename);
-  fs.writeFileSync(filePath, contents);
+  writeFileSync(filePath, contents);
 }
 
 function getContentEncodings(headers) {
-  const contentEncodings = headers
+  return headers
     .get('Accept-Encoding')
     ?.split(',')
-    .reduce((acc, value) => {
-      const contentEncoding = value.trim();
-      if (contentEncoding === 'gzip') {
-        acc.push(contentEncoding);
-      }
-      return acc;
-    }, []);
-
-  return contentEncodings?.join(',');
+    .map((value) => value.trim())
+    .filter((encoding) => encoding === 'gzip')
+    .join(',');
 }
 
 function handleRequest(socket, data) {
@@ -86,33 +90,31 @@ function handleRequest(socket, data) {
   const contentEncodings = getContentEncodings(headers);
 
   if (path === '/') {
-    socket.write(Buffer.from(constructResponse(HttpCodes.Ok)));
+    writeResponse(socket, HttpCodes.OK);
   } else if (path.startsWith('/echo')) {
     const echoValue = extractParameter(/^\/echo\/(?<echoValue>.+)$/, 'echoValue', path);
-    socket.write(Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.TextPlain, contentEncodings, echoValue)));
+    writeResponse(socket, HttpCodes.OK, ContentTypes.TextPlain, contentEncodings, echoValue);
   } else if (path === '/user-agent') {
     const userAgent = headers.get('User-Agent');
-    socket.write(Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.TextPlain, contentEncodings, userAgent)));
+    writeResponse(socket, HttpCodes.OK, ContentTypes.TextPlain, contentEncodings, userAgent);
   } else if (path.startsWith('/files')) {
     const filename = extractParameter(/^\/files\/(?<filename>.+)$/, 'filename', path);
 
     if (verb === 'GET') {
       const contents = readFileContents(filename);
       if (contents) {
-        socket.write(
-          Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.ApplicationOctetStream, contentEncodings, contents)),
-        );
+        writeResponse(socket, HttpCodes.OK, ContentTypes.ApplicationOctetStream, contentEncodings, contents);
       } else {
-        socket.write(Buffer.from(constructResponse(HttpCodes.NotFound)));
+        writeResponse(socket, HttpCodes.NotFound);
       }
     } else if (verb === 'POST') {
       saveFile(filename, body);
-      socket.write(Buffer.from(constructResponse(HttpCodes.Created)));
+      writeResponse(socket, HttpCodes.Created);
     } else {
-      socket.write(Buffer.from(constructResponse(HttpCodes.InternalError)));
+      writeResponse(socket, HttpCodes.InternalError);
     }
   } else {
-    socket.write(Buffer.from(constructResponse(HttpCodes.NotFound)));
+    writeResponse(socket, HttpCodes.NotFound);
   }
 }
 

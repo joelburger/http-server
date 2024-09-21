@@ -3,7 +3,7 @@ const CRLF = '\r\n';
 const DOUBLE_CRLF = '\r\n\r\n';
 
 const HttpCodes = {
-  Ok: {
+  OK: {
     code: 200,
     text: 'OK',
   },

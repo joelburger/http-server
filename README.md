@@ -1,37 +1,67 @@
-[![progress-banner](https://backend.codecrafters.io/progress/http-server/c26669f0-0940-46e5-9165-67e5a2c7d90d)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
+# HTTP Server Project - CodeCrafters Challenge
 
-This is a starting point for JavaScript solutions to the
-["Build Your Own HTTP server" Challenge](https://app.codecrafters.io/courses/http-server/overview).
+This project is a simple Node.js server that handles HTTP requests and responses. It supports various endpoints and
+functionalities such as echoing values, returning user-agent information, and handling file operations.
 
-[HTTP](https://en.wikipedia.org/wiki/Hypertext_Transfer_Protocol) is the
-protocol that powers the web. In this challenge, you'll build a HTTP/1.1 server
-that is capable of serving multiple clients.
+## Features
 
-Along the way you'll learn about TCP servers,
-[HTTP request syntax](https://www.w3.org/Protocols/rfc2616/rfc2616-sec5.html),
-and more.
+- **Root Endpoint**: Returns a simple OK response.
+- **Echo Endpoint**: Echoes back a value provided in the URL.
+- **User-Agent Endpoint**: Returns the user-agent header from the request.
+- **File Operations**: Supports reading and writing files via GET and POST requests.
+- **Gzip Compression**: Supports Gzip content encoding
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+## Endpoints
 
-# Passing the first stage
+- `/`: Root endpoint, returns HTTP 200 OK.
+- `/echo/:value`: Echoes back the value provided in the URL.
+- `/user-agent`: Returns the user-agent header from the request.
+- `/files/:filename`: Handles file operations. Supports GET for reading files and POST for writing files.
 
-The entry point for your HTTP server implementation is in `app/main.js`. Study
-and uncomment the relevant code, and push your changes to pass the first stage:
+## Installation
 
+Install dependencies:
 ```sh
-git commit -am "pass 1st stage" # any msg
-git push origin master
+npm install
 ```
 
-Time to move on to the next stage!
+## Usage
 
-# Stage 2 & beyond
+1. Start the server:
+    ```sh
+    node app/main.js --directory /path/to/your/directory
+    ```
 
-Note: This section is for stages 2 and beyond.
+2. The server will listen on `localhost:4221`.
 
-1. Ensure you have `node (21)` installed locally
-1. Run `./your_program.sh` to run your program, which is implemented in
-   `app/main.js`.
-1. Commit your changes and run `git push origin master` to submit your solution
-   to CodeCrafters. Test output will be streamed to your terminal.
+## Configuration
+
+- **--directory**: Specify the directory for file operations.
+
+## Example Requests
+
+- **Root Endpoint**:
+    ```sh
+    curl http://localhost:4221/
+    ```
+
+- **Echo Endpoint**:
+    ```sh
+    curl http://localhost:4221/echo/hello
+    ```
+
+- **User-Agent Endpoint**:
+    ```sh
+    curl http://localhost:4221/user-agent
+    ```
+
+- **File Operations**:
+    - GET:
+        ```sh
+        curl http://localhost:4221/files/yourfile.txt
+        ```
+    - POST:
+        ```sh
+        curl -X POST -d "file content" http://localhost:4221/files/yourfile.txt
+        ```
+
