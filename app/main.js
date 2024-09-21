@@ -2,33 +2,7 @@ const net = require('net');
 const { join } = require('node:path');
 const { readFileSync } = require('node:fs');
 const fs = require('fs');
-
-const CRLF = '\r\n';
-const DOUBLE_CRLF = '\r\n\r\n';
-
-const HttpCodes = {
-  Ok: {
-    code: 200,
-    text: 'OK',
-  },
-  Created: {
-    code: 201,
-    text: 'Created',
-  },
-  NotFound: {
-    code: 404,
-    text: 'Not Found',
-  },
-  InternalError: {
-    code: 500,
-    text: 'Internal Error',
-  },
-};
-
-const ContentTypes = {
-  TextPlain: 'text/plain',
-  ApplicationOctetStream: 'application/octet-stream',
-};
+const { DOUBLE_CRLF, CRLF, HttpCodes, ContentTypes } = require('./constants');
 
 const config = parseCliParameters();
 
@@ -73,11 +47,17 @@ function parseRequest(data) {
   };
 }
 
-function constructResponse(httpCode, contentType, content) {
-  if (content && contentType) {
-    return `HTTP/1.1 ${httpCode.code} ${httpCode.text}${CRLF}Content-Type: ${contentType}${CRLF}Content-Length: ${content.length}${DOUBLE_CRLF}${content}`;
-  }
-  return `HTTP/1.1 ${httpCode.code} ${httpCode.text}${DOUBLE_CRLF}`;
+function constructResponse(httpCode, contentType, contentEncoding, content) {
+  const statusLine = `HTTP/1.1 ${httpCode.code} ${httpCode.text}${CRLF}`;
+  const headers = [
+    contentType && `Content-Type: ${contentType}`,
+    contentEncoding && `Content-Encoding: ${contentEncoding}`,
+    content && `Content-Length: ${content.length}`,
+  ]
+    .filter(Boolean)
+    .join(CRLF);
+
+  return `${statusLine}${headers}${DOUBLE_CRLF}${content || ''}`;
 }
 
 function saveFile(filename, contents) {
@@ -88,21 +68,25 @@ function saveFile(filename, contents) {
 function handleRequest(socket, data) {
   const { verb, path, headers, body } = parseRequest(data);
 
+  const contentEncoding = headers.has('Accept-Encoding') ? headers.get('Accept-Encoding') : null;
+
   if (path === '/') {
     socket.write(Buffer.from(constructResponse(HttpCodes.Ok)));
   } else if (path.startsWith('/echo')) {
     const echoValue = extractParameter(/^\/echo\/(?<echoValue>.+)$/, 'echoValue', path);
-    socket.write(Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.TextPlain, echoValue)));
+    socket.write(Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.TextPlain, contentEncoding, echoValue)));
   } else if (path === '/user-agent') {
     const userAgent = headers.get('User-Agent');
-    socket.write(Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.TextPlain, userAgent)));
+    socket.write(Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.TextPlain, contentEncoding, userAgent)));
   } else if (path.startsWith('/files')) {
     const filename = extractParameter(/^\/files\/(?<filename>.+)$/, 'filename', path);
 
     if (verb === 'GET') {
       const contents = readFileContents(filename);
       if (contents) {
-        socket.write(Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.ApplicationOctetStream, contents)));
+        socket.write(
+          Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.ApplicationOctetStream, contentEncoding, contents)),
+        );
       } else {
         socket.write(Buffer.from(constructResponse(HttpCodes.NotFound)));
       }
