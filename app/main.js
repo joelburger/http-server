@@ -65,29 +65,34 @@ function saveFile(filename, contents) {
   fs.writeFileSync(filePath, contents);
 }
 
-function getContentEncoding(headers) {
-  const contentEncoding = headers.get('Accept-Encoding');
+function getContentEncodings(headers) {
+  const contentEncodings = headers
+    .get('Accept-Encoding')
+    ?.split(',')
+    .reduce((acc, value) => {
+      const contentEncoding = value.trim();
+      if (contentEncoding === 'gzip') {
+        acc.push(contentEncoding);
+      }
+      return acc;
+    }, []);
 
-  if (contentEncoding === 'gzip') {
-    return contentEncoding;
-  }
-
-  return null;
+  return contentEncodings?.join(',');
 }
 
 function handleRequest(socket, data) {
   const { verb, path, headers, body } = parseRequest(data);
 
-  const contentEncoding = getContentEncoding(headers);
+  const contentEncodings = getContentEncodings(headers);
 
   if (path === '/') {
     socket.write(Buffer.from(constructResponse(HttpCodes.Ok)));
   } else if (path.startsWith('/echo')) {
     const echoValue = extractParameter(/^\/echo\/(?<echoValue>.+)$/, 'echoValue', path);
-    socket.write(Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.TextPlain, contentEncoding, echoValue)));
+    socket.write(Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.TextPlain, contentEncodings, echoValue)));
   } else if (path === '/user-agent') {
     const userAgent = headers.get('User-Agent');
-    socket.write(Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.TextPlain, contentEncoding, userAgent)));
+    socket.write(Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.TextPlain, contentEncodings, userAgent)));
   } else if (path.startsWith('/files')) {
     const filename = extractParameter(/^\/files\/(?<filename>.+)$/, 'filename', path);
 
@@ -95,7 +100,7 @@ function handleRequest(socket, data) {
       const contents = readFileContents(filename);
       if (contents) {
         socket.write(
-          Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.ApplicationOctetStream, contentEncoding, contents)),
+          Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.ApplicationOctetStream, contentEncodings, contents)),
         );
       } else {
         socket.write(Buffer.from(constructResponse(HttpCodes.NotFound)));
