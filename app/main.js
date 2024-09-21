@@ -1,4 +1,7 @@
 const net = require('net');
+const { join } = require('node:path');
+const { readFileSync } = require('node:fs');
+const fs = require('fs');
 
 const CRLF = '\r\n';
 const DOUBLE_CRLF = '\r\n\r\n';
@@ -15,10 +18,23 @@ const HttpCodes = {
 };
 
 const ContentTypes = {
-  TextPlain: {
-    text: 'text/plain',
-  },
+  TextPlain: 'text/plain',
+  ApplicationOctetStream: 'application/octet-stream',
 };
+
+const config = parseCliParameters();
+
+function readFileContents(filename) {
+  const filePath = join(config.get('--directory'), filename);
+
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+
+  const data = readFileSync(filePath);
+
+  return Buffer.from(data).toString('utf8');
+}
 
 function extractParameter(pattern, parameter, path) {
   const matches = pattern.exec(path);
@@ -46,7 +62,7 @@ function parseRequest(data) {
 
 function constructResponse(httpCode, contentType, content) {
   if (content && contentType) {
-    return `HTTP/1.1 ${httpCode.code} ${httpCode.text}${CRLF}Content-Type: ${contentType.text}${CRLF}Content-Length: ${content.length}${DOUBLE_CRLF}${content}`;
+    return `HTTP/1.1 ${httpCode.code} ${httpCode.text}${CRLF}Content-Type: ${contentType}${CRLF}Content-Length: ${content.length}${DOUBLE_CRLF}${content}`;
   }
   return `HTTP/1.1 ${httpCode.code} ${httpCode.text}${DOUBLE_CRLF}`;
 }
@@ -62,9 +78,32 @@ function handleRequest(socket, data) {
   } else if (path === '/user-agent') {
     const userAgent = headers.get('User-Agent');
     socket.write(Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.TextPlain, userAgent)));
+  } else if (path.startsWith('/files')) {
+    const filename = extractParameter(/^\/files\/(?<filename>.+)$/, 'filename', path);
+    const contents = readFileContents(filename);
+
+    if (contents) {
+      socket.write(Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.ApplicationOctetStream, contents)));
+    } else {
+      socket.write(Buffer.from(constructResponse(HttpCodes.NotFound)));
+    }
   } else {
     socket.write(Buffer.from(constructResponse(HttpCodes.NotFound)));
   }
+}
+
+function parseCliParameters() {
+  const map = new Map();
+
+  const cliArguments = process.argv.slice(2);
+
+  cliArguments.forEach((arg, index) => {
+    if (arg.startsWith('--')) {
+      map.set(arg, cliArguments[index + 1]);
+    }
+  });
+
+  return map;
 }
 
 const server = net.createServer((socket) => {
