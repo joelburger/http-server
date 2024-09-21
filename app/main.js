@@ -65,10 +65,20 @@ function saveFile(filename, contents) {
   fs.writeFileSync(filePath, contents);
 }
 
+function getContentEncoding(headers) {
+  const contentEncoding = headers.get('Accept-Encoding');
+
+  if (contentEncoding === 'gzip') {
+    return contentEncoding;
+  }
+
+  return null;
+}
+
 function handleRequest(socket, data) {
   const { verb, path, headers, body } = parseRequest(data);
 
-  const contentEncoding = headers.has('Accept-Encoding') ? headers.get('Accept-Encoding') : null;
+  const contentEncoding = getContentEncoding(headers);
 
   if (path === '/') {
     socket.write(Buffer.from(constructResponse(HttpCodes.Ok)));
