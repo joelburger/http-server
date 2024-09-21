@@ -11,9 +11,17 @@ const HttpCodes = {
     code: 200,
     text: 'OK',
   },
+  Created: {
+    code: 201,
+    text: 'Created',
+  },
   NotFound: {
     code: 404,
     text: 'Not Found',
+  },
+  InternalError: {
+    code: 500,
+    text: 'Internal Error',
   },
 };
 
@@ -25,7 +33,7 @@ const ContentTypes = {
 const config = parseCliParameters();
 
 function readFileContents(filename) {
-  const filePath = join(config.get('--directory'), filename);
+  const filePath = join(config.get('directory'), filename);
 
   if (!fs.existsSync(filePath)) {
     return null;
@@ -44,19 +52,24 @@ function extractParameter(pattern, parameter, path) {
 
 function parseRequest(data) {
   const stringValue = data.toString();
+  const endOfRequestLine = stringValue.indexOf(CRLF);
   const requestLine = stringValue.substring(0, stringValue.indexOf(CRLF));
   const [verb, path, version] = requestLine.split(' ');
 
-  const headerLines = stringValue.substring(requestLine.length, stringValue.indexOf(DOUBLE_CRLF));
+  const endOfHeader = stringValue.indexOf(DOUBLE_CRLF);
+  const headerLines = stringValue.substring(endOfRequestLine, endOfHeader);
   const headers = headerLines.split(CRLF).reduce((acc, currentValue) => {
     const [headerKey, headerValue] = currentValue.split(':').map((value) => value.trim());
     return acc.set(headerKey, headerValue);
   }, new Map());
 
+  const body = stringValue.substring(endOfHeader + DOUBLE_CRLF.length);
+
   return {
     verb,
     path,
     headers,
+    body,
   };
 }
 
@@ -67,8 +80,13 @@ function constructResponse(httpCode, contentType, content) {
   return `HTTP/1.1 ${httpCode.code} ${httpCode.text}${DOUBLE_CRLF}`;
 }
 
+function saveFile(filename, contents) {
+  const filePath = join(config.get('directory'), filename);
+  fs.writeFileSync(filePath, contents);
+}
+
 function handleRequest(socket, data) {
-  const { verb, path, headers } = parseRequest(data);
+  const { verb, path, headers, body } = parseRequest(data);
 
   if (path === '/') {
     socket.write(Buffer.from(constructResponse(HttpCodes.Ok)));
@@ -80,12 +98,19 @@ function handleRequest(socket, data) {
     socket.write(Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.TextPlain, userAgent)));
   } else if (path.startsWith('/files')) {
     const filename = extractParameter(/^\/files\/(?<filename>.+)$/, 'filename', path);
-    const contents = readFileContents(filename);
 
-    if (contents) {
-      socket.write(Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.ApplicationOctetStream, contents)));
+    if (verb === 'GET') {
+      const contents = readFileContents(filename);
+      if (contents) {
+        socket.write(Buffer.from(constructResponse(HttpCodes.Ok, ContentTypes.ApplicationOctetStream, contents)));
+      } else {
+        socket.write(Buffer.from(constructResponse(HttpCodes.NotFound)));
+      }
+    } else if (verb === 'POST') {
+      saveFile(filename, body);
+      socket.write(Buffer.from(constructResponse(HttpCodes.Created)));
     } else {
-      socket.write(Buffer.from(constructResponse(HttpCodes.NotFound)));
+      socket.write(Buffer.from(constructResponse(HttpCodes.InternalError)));
     }
   } else {
     socket.write(Buffer.from(constructResponse(HttpCodes.NotFound)));
@@ -99,7 +124,7 @@ function parseCliParameters() {
 
   cliArguments.forEach((arg, index) => {
     if (arg.startsWith('--')) {
-      map.set(arg, cliArguments[index + 1]);
+      map.set(arg.slice(2), cliArguments[index + 1]);
     }
   });
 
